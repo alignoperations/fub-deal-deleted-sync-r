@@ -36,31 +36,89 @@ class FubDealDeletedSync {
 
       console.log(`🔍 Processing deletion for deal ID: ${dealId}`);
 
-      // Find the corresponding Airtable record
-      const airtableRecord = await this.findAirtableRecord('Transactions Log', 'FUB Deal ID', dealId);
+      // Get deal data from FollowUpBoss to determine pipeline
+      let dealData = null;
+      let pipelineName = null;
+      
+      try {
+        console.log(`📡 Fetching deal data from FollowUpBoss for deal ${dealId}`);
+        dealData = await this.getDealData(dealId);
+        pipelineName = dealData?.pipelineName;
+        console.log(`📊 Retrieved pipeline name: ${pipelineName}`);
+      } catch (err) {
+        console.log(`⚠️ Could not retrieve deal data from FUB: ${err.message}`);
+        // If we can't get the deal data, we'll search both tables
+        console.log('🔄 Will search both tables since pipeline is unknown');
+      }
+
+      // Determine which table to search based on pipeline
+      let tableName, fieldName;
+      let searchBothTables = false;
+
+      if (pipelineName === 'Agent Recruiting') {
+        tableName = 'Agents';
+        fieldName = 'FUB Deal ID';
+        console.log('🏢 Searching in Agents table for Agent Recruiting pipeline');
+      } else if (pipelineName) {
+        tableName = 'Transactions Log';
+        fieldName = 'FUB Deal ID';
+        console.log('📋 Searching in Transactions Log table');
+      } else {
+        // If we couldn't determine pipeline, search both tables
+        searchBothTables = true;
+        console.log('🔍 Pipeline unknown - will search both tables');
+      }
+
+      let airtableRecord = null;
+      let finalTableName = null;
+
+      if (searchBothTables) {
+        // Try Transactions Log first, then Agents
+        console.log('📋 Searching Transactions Log table first...');
+        airtableRecord = await this.findAirtableRecord('Transactions Log', 'FUB Deal ID', dealId);
+        
+        if (airtableRecord) {
+          finalTableName = 'Transactions Log';
+          console.log('✅ Found record in Transactions Log');
+        } else {
+          console.log('🏢 Not found in Transactions Log, searching Agents table...');
+          airtableRecord = await this.findAirtableRecord('Agents', 'FUB Deal ID', dealId);
+          if (airtableRecord) {
+            finalTableName = 'Agents';
+            console.log('✅ Found record in Agents table');
+          }
+        }
+      } else {
+        // Search specific table based on pipeline
+        airtableRecord = await this.findAirtableRecord(tableName, fieldName, dealId);
+        finalTableName = tableName;
+      }
       
       if (!airtableRecord) {
-        console.log(`⚠️ No Airtable record found for deal ID: ${dealId}`);
+        const searchedTables = searchBothTables ? 'Transactions Log and Agents tables' : finalTableName;
+        console.log(`⚠️ No Airtable record found for deal ID: ${dealId} in ${searchedTables}`);
         return res.json({ 
           status: 'not_found', 
-          message: `No Airtable record found for deal ID: ${dealId}` 
+          message: `No Airtable record found for deal ID: ${dealId} in ${searchedTables}` 
         });
       }
 
-      console.log(`📋 Found Airtable record: ${airtableRecord.id}`);
+      console.log(`📋 Found Airtable record: ${airtableRecord.id} in ${finalTableName}`);
 
       // Delete the Airtable record
-      await this.deleteAirtableRecord('Transactions Log', airtableRecord.id);
+      await this.deleteAirtableRecord(finalTableName, airtableRecord.id);
       
-      console.log(`✅ Successfully deleted Airtable record ${airtableRecord.id} for deal ${dealId}`);
+      console.log(`✅ Successfully deleted Airtable record ${airtableRecord.id} for deal ${dealId} from ${finalTableName}`);
 
       // Send success notification to Slack
-      await this.sendSlackNotification(dealId, airtableRecord.id, 'success');
+      await this.sendSlackNotification(dealId, airtableRecord.id, 'success', null, finalTableName, pipelineName);
 
       return res.json({ 
         status: 'success', 
         dealId: dealId,
-        deletedRecordId: airtableRecord.id
+        deletedRecordId: airtableRecord.id,
+        tableName: finalTableName,
+        pipelineName: pipelineName
       });
 
     } catch (err) {
@@ -158,13 +216,25 @@ class FubDealDeletedSync {
     }
   }
 
-  async sendSlackNotification(dealId, recordId, status, errorMessage = null) {
+  async getDealData(dealId) {
+    if (!this.config.followUpBossApi || !this.config.followUpBossToken) {
+      throw new Error('FollowUpBoss API configuration missing');
+    }
+    
+    const response = await axios.get(
+      `${this.config.followUpBossApi}/deals/${dealId}`,
+      { headers: { Authorization: `Basic ${Buffer.from(this.config.followUpBossToken + ':').toString('base64')}` } }
+    );
+    return response.data;
+  }
+
+  async sendSlackNotification(dealId, recordId, status, errorMessage = null, tableName = null, pipelineName = null) {
     try {
       const channel = this.config.slack.channelJulianna;
       
       let text;
       if (status === 'success') {
-        text = `*Deal Deletion Processed Successfully* ✅\n• Deal ID: *${dealId}*\n• Deleted Airtable Record: *${recordId}*\n• Timestamp: ${new Date().toISOString()}`;
+        text = `*Deal Deletion Processed Successfully* ✅\n• Deal ID: *${dealId}*\n• Pipeline: *${pipelineName || 'Unknown'}*\n• Deleted Airtable Record: *${recordId}*\n• Table: *${tableName}*\n• Timestamp: ${new Date().toISOString()}`;
       } else {
         text = `*Deal Deletion Processing Error* ❌\n• Deal ID: *${dealId}*\n• Error: ${errorMessage}\n• Timestamp: ${new Date().toISOString()}`;
       }
@@ -187,6 +257,8 @@ class FubDealDeletedSync {
 }
 
 const config = {
+  followUpBossApi: process.env.FUB_API_URL,
+  followUpBossToken: process.env.FUB_TOKEN,
   airtableBaseUrl: process.env.AIRTABLE_BASE_URL,
   airtableToken: process.env.AIRTABLE_TOKEN,
   airtableAgentsTable: process.env.AIRTABLE_AGENTS_TABLE,
