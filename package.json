@@ -1,0 +1,31 @@
+{
+  "name": "fub-deal-deleted-sync",
+  "version": "1.0.0",
+  "description": "FollowUpBoss deal deleted sync that removes corresponding Airtable records",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "keywords": [
+    "followupboss",
+    "airtable",
+    "webhook",
+    "sync",
+    "deletion"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
