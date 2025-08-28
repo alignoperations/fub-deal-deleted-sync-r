@@ -110,8 +110,8 @@ class FubDealDeletedSync {
       
       console.log(`✅ Successfully deleted Airtable record ${airtableRecord.id} for deal ${dealId} from ${finalTableName}`);
 
-      // Send success notification to Slack
-      await this.sendSlackNotification(dealId, airtableRecord.id, 'success', null, finalTableName, pipelineName);
+      // Only send Slack notifications for errors, not for successful deletions
+      // await this.sendSlackNotification(dealId, airtableRecord.id, 'success', null, finalTableName, pipelineName);
 
       return res.json({ 
         status: 'success', 
