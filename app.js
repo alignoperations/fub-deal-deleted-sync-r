@@ -2,6 +2,15 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 
+// Suffix helpers for Airtable FUB Deal ID disambiguation
+const FUB_SUFFIX = process.env.FUB_ACCOUNT_SUFFIX || '';
+function toAirtableKey(dealId) {
+  return FUB_SUFFIX ? `${dealId}-${FUB_SUFFIX}` : `${dealId}`;
+}
+function toFubDealId(airtableKey) {
+  return parseInt(String(airtableKey).split('-')[0]);
+}
+
 class FubDealDeletedSync {
   constructor(config) {
     this.config = config;
@@ -75,14 +84,14 @@ class FubDealDeletedSync {
       if (searchBothTables) {
         // Try Transactions Log first, then Agents
         console.log('📋 Searching Transactions Log table first...');
-        airtableRecord = await this.findAirtableRecord('Transactions Log', 'FUB Deal ID', dealId);
-        
+        airtableRecord = await this.findAirtableRecord('Transactions Log', 'FUB Deal ID', toAirtableKey(dealId));
+
         if (airtableRecord) {
           finalTableName = 'Transactions Log';
           console.log('✅ Found record in Transactions Log');
         } else {
           console.log('🏢 Not found in Transactions Log, searching Agents table...');
-          airtableRecord = await this.findAirtableRecord('Agents', 'FUB Deal ID', dealId);
+          airtableRecord = await this.findAirtableRecord('Agents', 'FUB Deal ID', toAirtableKey(dealId));
           if (airtableRecord) {
             finalTableName = 'Agents';
             console.log('✅ Found record in Agents table');
@@ -90,7 +99,7 @@ class FubDealDeletedSync {
         }
       } else {
         // Search specific table based on pipeline
-        airtableRecord = await this.findAirtableRecord(tableName, fieldName, dealId);
+        airtableRecord = await this.findAirtableRecord(tableName, fieldName, toAirtableKey(dealId));
         finalTableName = tableName;
       }
       
