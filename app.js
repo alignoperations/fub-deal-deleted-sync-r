@@ -261,30 +261,8 @@ class FubDealDeletedSync {
   }
 
   async sendSlackNotification(dealId, recordId, status, errorMessage = null, tableName = null, pipelineName = null) {
-    try {
-      const channel = this.config.slack.channelJulianna;
-      
-      let text;
-      if (status === 'success') {
-        text = `*Deal Deletion Processed Successfully* ✅\n• Deal ID: *${dealId}*\n• Pipeline: *${pipelineName || 'Unknown'}*\n• Deleted Airtable Record: *${recordId}*\n• Table: *${tableName}*\n• Timestamp: ${new Date().toISOString()}`;
-      } else {
-        text = `*Deal Deletion Processing Error* ❌\n• Deal ID: *${dealId}*\n• Error: ${errorMessage}\n• Timestamp: ${new Date().toISOString()}`;
-      }
-
-      await axios.post(
-        'https://slack.com/api/chat.postMessage',
-        { channel, text },
-        {
-          headers: {
-            Authorization: `Bearer ${this.config.slack.botToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-    } catch (err) {
-      console.error('Failed to send Slack notification:', err.message);
-      // Don't throw here as this is just a notification
-    }
+    // Disabled: error notifications now go through centralized errorLogger -> Airtable -> daily review task
+    return;
   }
 }
 
