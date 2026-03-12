@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
+const { logError, classifyError } = require('./errorLogger');
 
 // Suffix helpers for Airtable FUB Deal ID disambiguation
 const FUB_SUFFIX = process.env.FUB_ACCOUNT_SUFFIX || '';
@@ -132,18 +133,26 @@ class FubDealDeletedSync {
 
     } catch (err) {
       console.error('❌ Processing error:', err.message);
-      
+
+      logError({
+        appName: 'fub-deal-deleted-sync-r',
+        errorType: classifyError(err),
+        errorMessage: `Deal deletion processing error: ${err.message}`,
+        httpStatus: err.response?.status,
+        context: JSON.stringify(err.response?.data || {}).slice(0, 1000)
+      });
+
       // Send error notification to Slack
       await this.sendSlackNotification(
-        req.body?.resourceIds?.[0] || 'unknown', 
-        null, 
-        'error', 
+        req.body?.resourceIds?.[0] || 'unknown',
+        null,
+        'error',
         err.message
       );
 
-      return res.status(500).json({ 
-        status: 'error', 
-        message: err.message 
+      return res.status(500).json({
+        status: 'error',
+        message: err.message
       });
     }
   }
@@ -190,6 +199,13 @@ class FubDealDeletedSync {
       return response.data.records[0] || null;
     } catch (err) {
       console.error(`Error finding Airtable record: ${err.message}`);
+      logError({
+        appName: 'fub-deal-deleted-sync-r',
+        errorType: classifyError(err),
+        errorMessage: `Failed to find Airtable record: ${err.message}`,
+        httpStatus: err.response?.status,
+        context: JSON.stringify(err.response?.data || {}).slice(0, 1000)
+      });
       throw new Error(`Failed to find Airtable record: ${err.message}`);
     }
   }
@@ -210,6 +226,13 @@ class FubDealDeletedSync {
       return response.data;
     } catch (err) {
       console.error(`Error deleting Airtable record: ${err.message}`);
+      logError({
+        appName: 'fub-deal-deleted-sync-r',
+        errorType: classifyError(err),
+        errorMessage: `Failed to delete Airtable record: ${err.message}`,
+        httpStatus: err.response?.status,
+        context: JSON.stringify(err.response?.data || {}).slice(0, 1000)
+      });
       throw new Error(`Failed to delete Airtable record: ${err.message}`);
     }
   }
