@@ -2,6 +2,17 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const { logError, classifyError } = require('./errorLogger');
+const { buildRef } = require('./utils/logRef');
+
+const HANDLER = 'fub-deal-deleted-sync-r';
+
+function _log(data) {
+  const ref = buildRef(data);
+  if (ref) data._ref = ref;
+  const method = data.level === 'error' ? 'error' : data.level === 'warn' ? 'warn' : 'log';
+  console[method](JSON.stringify(data));
+}
+
 
 // Suffix helpers for Airtable FUB Deal ID disambiguation
 const FUB_SUFFIX = process.env.FUB_ACCOUNT_SUFFIX || '';
@@ -31,34 +42,34 @@ class FubDealDeletedSync {
 
   async handleDealDeletion(req, res) {
     try {
-      console.log('🗑️ Received deal deletion webhook:', JSON.stringify(req.body, null, 2));
+      _log({ level: 'info', handler: HANDLER, type: 'RECEIVED_DEAL_DELETION_WEBHOOK' });
       
       // Extract deal ID from webhook payload
       const dealId = this.extractDealId(req.body);
       
       if (!dealId) {
-        console.log('❌ No deal ID found in webhook payload');
+        _log({ level: 'info', handler: HANDLER, type: 'NO_DEAL_ID_FOUND_IN_WEBHOOK_PAYLOAD' });
         return res.status(400).json({ 
           status: 'error', 
           message: 'No deal ID found in webhook payload' 
         });
       }
 
-      console.log(`🔍 Processing deletion for deal ID: ${dealId}`);
+      _log({ level: 'info', handler: HANDLER, type: 'PROCESSING_DELETION_FOR_DEAL_ID_DEALID', dealId });
 
       // Get deal data from FollowUpBoss to determine pipeline
       let dealData = null;
       let pipelineName = null;
       
       try {
-        console.log(`📡 Fetching deal data from FollowUpBoss for deal ${dealId}`);
+        _log({ level: 'info', handler: HANDLER, type: 'FETCHING_DEAL_DATA_FROM_FOLLOWUPBOSS_FOR_DEAL_DEAL', dealId });
         dealData = await this.getDealData(dealId);
         pipelineName = dealData?.pipelineName;
-        console.log(`📊 Retrieved pipeline name: ${pipelineName}`);
+        _log({ level: 'info', handler: HANDLER, type: 'RETRIEVED_PIPELINE_NAME_PIPELINENAME' });
       } catch (err) {
-        console.log(`⚠️ Could not retrieve deal data from FUB: ${err.message}`);
+        _log({ level: 'info', handler: HANDLER, type: 'COULD_NOT_RETRIEVE_DEAL_DATA_FROM_FUB_ERRMESSAGE', error: err.message });
         // If we can't get the deal data, we'll search both tables
-        console.log('🔄 Will search both tables since pipeline is unknown');
+        _log({ level: 'info', handler: HANDLER, type: 'WILL_SEARCH_BOTH_TABLES_SINCE_PIPELINE_IS_UNKNOWN' });
       }
 
       // Determine which table to search based on pipeline
@@ -68,15 +79,15 @@ class FubDealDeletedSync {
       if (pipelineName === 'Agent Recruiting') {
         tableName = 'Agents';
         fieldName = 'FUB Deal ID';
-        console.log('🏢 Searching in Agents table for Agent Recruiting pipeline');
+        _log({ level: 'info', handler: HANDLER, type: 'SEARCHING_IN_AGENTS_TABLE_FOR_AGENT_RECRUITING_PIP' });
       } else if (pipelineName) {
         tableName = 'Transactions Log';
         fieldName = 'FUB Deal ID';
-        console.log('📋 Searching in Transactions Log table');
+        _log({ level: 'info', handler: HANDLER, type: 'SEARCHING_IN_TRANSACTIONS_LOG_TABLE' });
       } else {
         // If we couldn't determine pipeline, search both tables
         searchBothTables = true;
-        console.log('🔍 Pipeline unknown - will search both tables');
+        _log({ level: 'info', handler: HANDLER, type: 'PIPELINE_UNKNOWN_WILL_SEARCH_BOTH_TABLES' });
       }
 
       let airtableRecord = null;
@@ -84,18 +95,18 @@ class FubDealDeletedSync {
 
       if (searchBothTables) {
         // Try Transactions Log first, then Agents
-        console.log('📋 Searching Transactions Log table first...');
+        _log({ level: 'info', handler: HANDLER, type: 'SEARCHING_TRANSACTIONS_LOG_TABLE_FIRST' });
         airtableRecord = await this.findAirtableRecord('Transactions Log', 'FUB Deal ID', toAirtableKey(dealId));
 
         if (airtableRecord) {
           finalTableName = 'Transactions Log';
-          console.log('✅ Found record in Transactions Log');
+          _log({ level: 'info', handler: HANDLER, type: 'FOUND_RECORD_IN_TRANSACTIONS_LOG' });
         } else {
-          console.log('🏢 Not found in Transactions Log, searching Agents table...');
+          _log({ level: 'info', handler: HANDLER, type: 'NOT_FOUND_IN_TRANSACTIONS_LOG_SEARCHING_AGENTS_TAB' });
           airtableRecord = await this.findAirtableRecord('Agents', 'FUB Deal ID', toAirtableKey(dealId));
           if (airtableRecord) {
             finalTableName = 'Agents';
-            console.log('✅ Found record in Agents table');
+            _log({ level: 'info', handler: HANDLER, type: 'FOUND_RECORD_IN_AGENTS_TABLE' });
           }
         }
       } else {
@@ -106,19 +117,19 @@ class FubDealDeletedSync {
       
       if (!airtableRecord) {
         const searchedTables = searchBothTables ? 'Transactions Log and Agents tables' : finalTableName;
-        console.log(`⚠️ No Airtable record found for deal ID: ${dealId} in ${searchedTables}`);
+        _log({ level: 'info', handler: HANDLER, type: 'NO_AIRTABLE_RECORD_FOUND_FOR_DEAL_ID_DEALID_IN_SEA', dealId });
         return res.json({ 
           status: 'not_found', 
           message: `No Airtable record found for deal ID: ${dealId} in ${searchedTables}` 
         });
       }
 
-      console.log(`📋 Found Airtable record: ${airtableRecord.id} in ${finalTableName}`);
+      _log({ level: 'info', handler: HANDLER, type: 'FOUND_AIRTABLE_RECORD_AIRTABLERECORDID_IN_FINALTAB' });
 
       // Delete the Airtable record
       await this.deleteAirtableRecord(finalTableName, airtableRecord.id);
       
-      console.log(`✅ Successfully deleted Airtable record ${airtableRecord.id} for deal ${dealId} from ${finalTableName}`);
+      _log({ level: 'info', handler: HANDLER, type: 'SUCCESSFULLY_DELETED_AIRTABLE_RECORD_AIRTABLERECOR', dealId });
 
       // Only send Slack notifications for errors, not for successful deletions
       // await this.sendSlackNotification(dealId, airtableRecord.id, 'success', null, finalTableName, pipelineName);
@@ -132,7 +143,7 @@ class FubDealDeletedSync {
       });
 
     } catch (err) {
-      console.error('❌ Processing error:', err.message);
+      _log({ level: 'error', handler: HANDLER, type: 'PROCESSING_ERROR', error: err.message });
 
       logError({
         appName: 'fub-deal-deleted-sync-r',
@@ -198,7 +209,7 @@ class FubDealDeletedSync {
       
       return response.data.records[0] || null;
     } catch (err) {
-      console.error(`Error finding Airtable record: ${err.message}`);
+      _log({ level: 'error', handler: HANDLER, type: 'ERROR_FINDING_AIRTABLE_RECORD_ERRMESSAGE', error: err.message });
       logError({
         appName: 'fub-deal-deleted-sync-r',
         errorType: classifyError(err),
@@ -225,7 +236,7 @@ class FubDealDeletedSync {
       
       return response.data;
     } catch (err) {
-      console.error(`Error deleting Airtable record: ${err.message}`);
+      _log({ level: 'error', handler: HANDLER, type: 'ERROR_DELETING_AIRTABLE_RECORD_ERRMESSAGE', error: err.message });
       logError({
         appName: 'fub-deal-deleted-sync-r',
         errorType: classifyError(err),
@@ -288,8 +299,8 @@ if (require.main === module) {
   const port = process.env.PORT || 3000;
   
   sync.app.listen(port, () => {
-    console.log(`🚀 FUB Deal Deleted Sync listening on port ${port}`);
-    console.log(`📝 Webhook endpoint: POST /webhook/deal-deleted`);
-    console.log(`💚 Health check: GET /health`);
+    _log({ level: 'info', handler: HANDLER, type: 'FUB_DEAL_DELETED_SYNC_LISTENING_ON_PORT_PORT' });
+    _log({ level: 'info', handler: HANDLER, type: 'WEBHOOK_ENDPOINT_POST_WEBHOOKDEALDELETED' });
+    _log({ level: 'info', handler: HANDLER, type: 'HEALTH_CHECK_GET_HEALTH' });
   });
 }
